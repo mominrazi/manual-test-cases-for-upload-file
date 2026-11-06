@@ -1,0 +1,122 @@
+import io.github.bonigarcia.wdm.WebDriverManager;
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+import org.testng.Assert;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.DataProvider;
+import org.testng.annotations.Test;
+
+import java.time.Duration;
+
+public class SimpleSessionAndUploadTest {
+
+    WebDriver driver;
+    WebDriverWait wait;
+
+    @BeforeMethod
+    public void setUp() {
+        // Automatically setup ChromeDriver and open browser
+        WebDriverManager.chromedriver().setup();
+        driver = new ChromeDriver();
+        driver.manage().window().maximize();
+        wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+        
+        // Open login page
+        driver.get("https://example-app.com/login");
+    }
+
+    @AfterMethod
+    public void tearDown() {
+        // Close the browser after each test
+        if (driver != null) {
+            driver.quit();
+        }
+    }
+
+    // Helper method to perform login
+    public void login(String username, String password) {
+        driver.findElement(By.id("username")).sendKeys(username);
+        driver.findElement(By.id("password")).sendKeys(password);
+        driver.findElement(By.id("loginBtn")).click();
+    }
+
+    @Test(priority = 1, description = "Test valid login")
+    public void testValidLogin() {
+        login("testuser@gmail.com", "Test@123");
+        
+        // Wait for upload container to verify successful login
+        WebElement uploadSection = wait.until(
+            ExpectedConditions.visibilityOfElementLocated(By.id("uploadContainer"))
+        );
+        
+        Assert.assertTrue(uploadSection.isDisplayed(), "User should log in successfully.");
+    }
+
+    @Test(priority = 2, description = "Test invalid login")
+    public void testInvalidLogin() {
+        login("wronguser@gmail.com", "WrongPass");
+        
+        // Verify error message is shown
+        WebElement errorMsg = wait.until(
+            ExpectedConditions.visibilityOfElementLocated(By.id("errorMessage"))
+        );
+        
+        Assert.assertTrue(errorMsg.isDisplayed(), "Error message should be displayed for invalid login.");
+    }
+
+    @Test(priority = 3, description = "Test session expiry on page refresh")
+    public void testSessionExpiryOnRefresh() {
+        login("testuser@gmail.com", "Test@123");
+        
+        // Refresh page to simulate session termination
+        driver.navigate().refresh();
+        
+        // Verify user is logged out / redirected to login
+        boolean isUploadVisible = driver.findElements(By.id("uploadContainer")).size() > 0;
+        Assert.assertFalse(isUploadVisible, "Session should expire after page refresh.");
+    }
+
+    // Data Provider for Boundary Value Analysis on File Upload Sizes (99MB, 100MB, 101MB)
+    @DataProvider(name = "fileSizes")
+    public Object[][] getFileSizes() {
+        return new Object[][] {
+            { "/path/to/file_99mb.mp4", true },
+            { "/path/to/file_100mb.mp4", true },
+            { "/path/to/file_101mb.mp4", false }
+        };
+    }
+
+    @Test(dataProvider = "fileSizes", priority = 4, description = "Test file upload size limits")
+    public void testFileUploadSizes(String filePath, boolean shouldSucceed) {
+        login("testuser@gmail.com", "Test@123");
+
+        // Upload file
+        driver.findElement(By.id("fileUploadInput")).sendKeys(filePath);
+
+        if (shouldSucceed) {
+            WebElement successMsg = wait.until(
+                ExpectedConditions.visibilityOfElementLocated(By.id("successMessage"))
+            );
+            Assert.assertTrue(successMsg.isDisplayed(), "File should upload successfully.");
+        } else {
+            WebElement errorMsg = wait.until(
+                ExpectedConditions.visibilityOfElementLocated(By.id("uploadError"))
+            );
+            Assert.assertTrue(errorMsg.isDisplayed(), "Error should appear for files over 100MB.");
+        }
+    }
+
+    @Test(priority = 5, description = "Test file preview without authentication")
+    public void testPreviewWithoutAuth() {
+        // Try accessing preview directly without logging in
+        driver.get("https://example-app.com/preview?fileId=123");
+
+        boolean isPreviewVisible = driver.findElements(By.id("previewModal")).size() > 0;
+        Assert.assertFalse(isPreviewVisible, "Unauthenticated user should not preview files.");
+    }
+}
